@@ -1,4 +1,4 @@
-use std::{mem::ManuallyDrop, cmp::Ordering, fmt::Debug};
+use std::{mem::ManuallyDrop, fmt::Debug};
 
 const CAPACITY: usize = 8;
 
@@ -87,32 +87,15 @@ impl<K: Ord, V> SlabMap<K, V> {
 
     #[inline]
     pub fn binary_search<'a>(&'a self, key: &K) -> Result<usize, Option<usize>> {
-        let s = self;
-        let mut size = s.len;
-        if size == 0 {
-            return Err(Some(0));
-        }
-        let mut base = 0usize;
-        while size > 1 {
-            let half = size / 2;
-            let mid = base + half;
-            // mid is always in [0, size), that means mid is >= 0 and < size.
-            // mid >= 0: by definition
-            // mid < size: mid = size / 2 + size / 4 + size / 8 ...
-            let cmp = s.slots[mid].key.cmp(key);
-            base = if cmp == Ordering::Greater { base } else { mid };
-            size -= half;
-        }
-        // base is always in [0, size) because base <= mid.
-        let cmp = s.slots[base].key.cmp(key);
-        if cmp == Ordering::Equal {
-            Ok(base)
-        } else {
-            let o = base + (cmp == Ordering::Less) as usize;
-            if o == CAPACITY {
+        let v = &self.slots[0..self.len].binary_search_by(|x| x.key.cmp(key));
+
+        match v {
+            Ok(v) => Ok(*v),
+            Err(v) if *v == CAPACITY => {
                 Err(None)
-            } else {
-                Err(Some(o))
+            }
+            Err(v) => {
+                Err(Some(*v))
             }
         }
     }
@@ -159,6 +142,10 @@ impl<K: Ord, V> SlabMap<K, V> {
 
         if let Some(index) = is_fallback {
             if index < self.len {
+                // for i in (index..self.len).rev() {
+                //     self.slots.swap(i + 1, i);
+                // }
+                // for (index + 1)
                 unsafe { std::ptr::copy(&self.slots[index], &mut self.slots[index + 1], self.len - index) };
             }
             self.slots[index] = ManuallyDrop::new(Record { key, value });
