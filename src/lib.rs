@@ -1,6 +1,6 @@
-use std::{mem::ManuallyDrop, fmt::Debug};
+use std::{fmt::Debug, mem::ManuallyDrop};
 
-const CAPACITY: usize = 8;
+const CAPACITY: usize = 12;
 
 pub struct SlabMap<K, V>
 where
@@ -13,9 +13,7 @@ where
 
 impl<K: Ord + Debug, V: Debug> Debug for SlabMap<K, V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_map()
-            .entries(self.iter())
-            .finish()
+        f.debug_map().entries(self.iter()).finish()
     }
 }
 
@@ -46,7 +44,7 @@ impl<K: Ord, V> Drop for SlabMap<K, V> {
 
 pub struct Iter<'a, K: Ord, V> {
     map: &'a SlabMap<K, V>,
-    cur: usize
+    cur: usize,
 }
 
 impl<'a, K: Ord, V> Iterator for Iter<'a, K, V> {
@@ -71,6 +69,7 @@ impl<'a, K: Ord, V> Iterator for Iter<'a, K, V> {
 }
 
 impl<K: Ord, V> SlabMap<K, V> {
+    #[inline]
     fn new_tail(record: Record<K, V>) -> Box<Self> {
         let mut map = Self {
             slots: unsafe { std::mem::zeroed() },
@@ -91,15 +90,12 @@ impl<K: Ord, V> SlabMap<K, V> {
 
         match v {
             Ok(v) => Ok(*v),
-            Err(v) if *v == CAPACITY => {
-                Err(None)
-            }
-            Err(v) => {
-                Err(Some(*v))
-            }
+            Err(v) if *v >= CAPACITY => Err(None),
+            Err(v) => Err(Some(*v)),
         }
     }
 
+    #[inline]
     pub fn get(&self, key: &K) -> Option<&V> {
         let mut t = Some(self);
         while let Some(slab) = t {
@@ -114,14 +110,19 @@ impl<K: Ord, V> SlabMap<K, V> {
     }
 
     #[inline(always)]
-    pub fn insert_inner<'a>(&'a mut self, mut key: K, mut value: V, has_fallback: bool) -> Result<(), (K, V)> {
+    pub fn insert_inner<'a>(
+        &'a mut self,
+        mut key: K,
+        mut value: V,
+        has_fallback: bool,
+    ) -> Result<(), (K, V)> {
         let mut is_fallback = None;
 
         match self.binary_search(&key) {
             Ok(i) => {
                 self.slots[i].value = value;
                 return Ok(());
-            },
+            }
             Err(sorted_index) => {
                 if let Some(index) = sorted_index {
                     if !has_fallback {
@@ -130,7 +131,9 @@ impl<K: Ord, V> SlabMap<K, V> {
                 }
 
                 if let Some(v) = &mut self.tail {
-                    if let Err((k, v)) = v.insert_inner(key, value, has_fallback || is_fallback.is_some()) {
+                    if let Err((k, v)) =
+                        v.insert_inner(key, value, has_fallback || is_fallback.is_some())
+                    {
                         key = k;
                         value = v;
                     } else {
@@ -141,28 +144,26 @@ impl<K: Ord, V> SlabMap<K, V> {
         }
 
         if let Some(index) = is_fallback {
-            if index < self.len {
-                // for i in (index..self.len).rev() {
-                //     self.slots.swap(i + 1, i);
-                // }
-                // for (index + 1)
-                unsafe { std::ptr::copy(&self.slots[index], &mut self.slots[index + 1], self.len - index) };
+            if index < std::cmp::min(CAPACITY, self.len) {
+                self.slots[index..self.len].rotate_right(1);
+            } else {
+                self.len += 1;
             }
             self.slots[index] = ManuallyDrop::new(Record { key, value });
-            self.len += 1;
             return Ok(());
         } else if !has_fallback {
             self.tail = Some(Self::new_tail(Record { key, value }));
             return Ok(());
         }
 
-        return Err((key, value))
+        return Err((key, value));
     }
 
+    #[inline]
     pub fn insert(&mut self, key: K, value: V) {
         match self.insert_inner(key, value, false) {
-            Ok(_) => {},
-            Err(_) => unreachable!("failed to insert")
+            Ok(_) => {}
+            Err(_) => unreachable!("failed to insert"),
         }
     }
 }
