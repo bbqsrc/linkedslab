@@ -1,17 +1,20 @@
 use std::{fmt::Debug, mem::ManuallyDrop};
+use generic_array::{ArrayLength, GenericArray};
+use generic_array::typenum::{self, Unsigned};
 
-const CAPACITY: usize = 12;
+// const CAPACITY: usize = 12;
 
-pub struct SlabMap<K, V>
+pub struct SlabMap<K, V, N = typenum::U12>
 where
     K: Ord,
+    N: ArrayLength<ManuallyDrop<Record<K, V>>>
 {
-    slots: [ManuallyDrop<Record<K, V>>; CAPACITY],
+    slots: GenericArray<ManuallyDrop<Record<K, V>>, N>, //[ManuallyDrop<Record<K, V>>; CAPACITY],
     len: usize,
-    tail: Option<Box<SlabMap<K, V>>>,
+    tail: Option<Box<SlabMap<K, V, N>>>,
 }
 
-impl<K: Ord + Debug, V: Debug> Debug for SlabMap<K, V> {
+impl<K: Ord + Debug, V: Debug, N: ArrayLength<ManuallyDrop<Record<K, V>>>> Debug for SlabMap<K, V, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_map().entries(self.iter()).finish()
     }
@@ -27,12 +30,23 @@ impl<K: Ord, V> Default for SlabMap<K, V> {
     }
 }
 
-struct Record<K, V> {
+
+impl<K: Ord, V, N: ArrayLength<ManuallyDrop<Record<K, V>>>> SlabMap<K, V, N> {
+    pub fn new() -> SlabMap<K, V, N> {
+        SlabMap {
+            slots: unsafe { std::mem::zeroed() },
+            len: 0,
+            tail: None,
+        }
+    }
+}
+
+pub struct Record<K, V> {
     key: K,
     value: V,
 }
 
-impl<K: Ord, V> Drop for SlabMap<K, V> {
+impl<K: Ord, V, N: ArrayLength<ManuallyDrop<Record<K, V>>>> Drop for SlabMap<K, V, N> {
     fn drop(&mut self) {
         let mut record: ManuallyDrop<Record<K, V>> = unsafe { std::mem::zeroed() };
         for slot in self.slots.iter_mut() {
@@ -42,12 +56,12 @@ impl<K: Ord, V> Drop for SlabMap<K, V> {
     }
 }
 
-pub struct Iter<'a, K: Ord, V> {
-    map: &'a SlabMap<K, V>,
+pub struct Iter<'a, K: Ord, V, N: ArrayLength<ManuallyDrop<Record<K, V>>>> {
+    map: &'a SlabMap<K, V, N>,
     cur: usize,
 }
 
-impl<'a, K: Ord, V> Iterator for Iter<'a, K, V> {
+impl<'a, K: Ord, V, N: ArrayLength<ManuallyDrop<Record<K, V>>>> Iterator for Iter<'a, K, V, N> {
     type Item = (&'a K, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -68,7 +82,7 @@ impl<'a, K: Ord, V> Iterator for Iter<'a, K, V> {
     }
 }
 
-impl<K: Ord, V> SlabMap<K, V> {
+impl<K: Ord, V, N: ArrayLength<ManuallyDrop<Record<K, V>>>> SlabMap<K, V, N> {
     #[inline]
     fn new_tail(record: Record<K, V>) -> Box<Self> {
         let mut map = Self {
@@ -80,7 +94,7 @@ impl<K: Ord, V> SlabMap<K, V> {
         Box::new(map)
     }
 
-    pub fn iter<'a>(&'a self) -> Iter<'a, K, V> {
+    pub fn iter<'a>(&'a self) -> Iter<'a, K, V, N> {
         Iter { map: self, cur: 0 }
     }
 
@@ -90,7 +104,7 @@ impl<K: Ord, V> SlabMap<K, V> {
 
         match v {
             Ok(v) => Ok(*v),
-            Err(v) if *v >= CAPACITY => Err(None),
+            Err(v) if *v >= <N as Unsigned>::to_usize() => Err(None),
             Err(v) => Err(Some(*v)),
         }
     }
@@ -144,7 +158,7 @@ impl<K: Ord, V> SlabMap<K, V> {
         }
 
         if let Some(index) = is_fallback {
-            if index < std::cmp::min(CAPACITY, self.len) {
+            if index < std::cmp::min(<N as Unsigned>::to_usize(), self.len) {
                 self.slots[index..self.len].rotate_right(1);
             } else {
                 self.len += 1;

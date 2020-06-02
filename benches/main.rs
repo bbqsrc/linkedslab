@@ -11,7 +11,7 @@ fn main() {
     }
 
     benchmarks! {
-        insert,
+        // insert,
         get,
     }
 
