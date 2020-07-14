@@ -1,7 +1,7 @@
 use criterion::{black_box, BatchSize, BenchmarkId, Criterion, Throughput};
+use generic_array::typenum::{U12, U16, U4, U6, U8};
 use rand::RngCore;
 use std::collections::BTreeMap;
-use generic_array::typenum::{U4, U6, U8, U12, U16};
 
 use crate::util::Item;
 
