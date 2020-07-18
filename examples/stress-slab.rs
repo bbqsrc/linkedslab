@@ -6,7 +6,7 @@ fn main() {
     println!("{:?}", std::mem::size_of::<Item>());
     println!(
         "{:?}",
-        std::mem::size_of::<linkedslab::SlabMap<usize, Item>>()
+        std::mem::size_of::<linkedslab::SlabMap<usize, Item, 8>>()
     );
 
     // for i in 0..100_000 {

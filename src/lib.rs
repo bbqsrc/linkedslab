@@ -1,25 +1,25 @@
 #![feature(box_syntax)]
 #![feature(maybe_uninit_ref)]
+#![allow(incomplete_features)]
+#![feature(const_generics)]
 
-use generic_array::typenum::{self, Unsigned};
-use generic_array::{ArrayLength, GenericArray};
+// use generic_array::typenum::{self, Unsigned};
+// use generic_array::{ArrayLength, GenericArray};
 use std::{fmt::Debug, mem::MaybeUninit};
 
-pub struct SlabMap<K, V, N = typenum::U8>
+pub struct SlabMap<K, V, const N: usize>
 where
     K: Ord,
-    N: ArrayLength<MaybeUninit<Record<K, V>>>,
 {
-    slots: GenericArray<MaybeUninit<Record<K, V>>, N>,
+    slots: [MaybeUninit<Record<K, V>>; N],
     len: usize,
     tail: Option<Box<SlabMap<K, V, N>>>,
 }
 
-impl<K, V, N> Clone for SlabMap<K, V, N>
+impl<K, V, const N: usize> Clone for SlabMap<K, V, N>
 where
     K: Ord + Clone,
     V: Clone,
-    N: ArrayLength<MaybeUninit<Record<K, V>>>,
 {
     fn clone(&self) -> Self {
         let mut map = Self {
@@ -29,7 +29,7 @@ where
         };
 
         let slots = &unsafe {
-            std::mem::transmute::<_, &[Record<K, V>]>(self.slots.as_slice())
+            std::mem::transmute::<_, &[Record<K, V>]>(&self.slots[..])
         }[..self.len];
 
         for (i, item) in slots.iter().enumerate() {
@@ -41,15 +41,16 @@ where
     }
 }
 
-impl<K: Ord + Debug, V: Debug, N: ArrayLength<MaybeUninit<Record<K, V>>>> Debug
-    for SlabMap<K, V, N>
+impl<K, V, const N: usize> Debug for SlabMap<K, V, N>
+where
+    K: Ord + Debug, V: Debug
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_map().entries(self.iter()).finish()
     }
 }
 
-impl<K: Ord, V> Default for SlabMap<K, V> {
+impl<K, V> Default for SlabMap<K, V, 8_usize> where K: Ord {
     fn default() -> Self {
         SlabMap {
             slots: unsafe { MaybeUninit::uninit().assume_init() },
@@ -59,7 +60,7 @@ impl<K: Ord, V> Default for SlabMap<K, V> {
     }
 }
 
-impl<K: Ord, V, N: ArrayLength<MaybeUninit<Record<K, V>>>> SlabMap<K, V, N> {
+impl<K: Ord, V, const N: usize> SlabMap<K, V, N> {
     pub fn new() -> SlabMap<K, V, N> {
         SlabMap {
             slots: unsafe { MaybeUninit::uninit().assume_init() },
@@ -87,7 +88,7 @@ where
     }
 }
 
-impl<K: Ord, V, N: ArrayLength<MaybeUninit<Record<K, V>>>> Drop for SlabMap<K, V, N> {
+impl<K: Ord, V, const N: usize> Drop for SlabMap<K, V, N> {
     fn drop(&mut self) {
         for item in &mut self.slots[..self.len] {
             unsafe { std::ptr::drop_in_place(item) }
@@ -95,12 +96,12 @@ impl<K: Ord, V, N: ArrayLength<MaybeUninit<Record<K, V>>>> Drop for SlabMap<K, V
     }
 }
 
-pub struct Iter<'a, K: Ord, V, N: ArrayLength<MaybeUninit<Record<K, V>>>> {
+pub struct Iter<'a, K: Ord, V, const N: usize> {
     map: &'a SlabMap<K, V, N>,
     cur: usize,
 }
 
-impl<'a, K: Ord, V, N: ArrayLength<MaybeUninit<Record<K, V>>>> Iterator for Iter<'a, K, V, N> {
+impl<'a, K: Ord, V, const N: usize> Iterator for Iter<'a, K, V, N> {
     type Item = (&'a K, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -121,11 +122,11 @@ impl<'a, K: Ord, V, N: ArrayLength<MaybeUninit<Record<K, V>>>> Iterator for Iter
     }
 }
 
-impl<K: Ord, V, N: ArrayLength<MaybeUninit<Record<K, V>>>> SlabMap<K, V, N> {
+impl<K: Ord, V, const N: usize> SlabMap<K, V, N> {
     #[inline]
     fn new_tail(record: Record<K, V>) -> Box<Self> {
         let mut map = Self {
-            slots: unsafe { std::mem::zeroed() },
+            slots: unsafe { MaybeUninit::uninit().assume_init() },
             len: 1,
             tail: None,
         };
@@ -144,7 +145,7 @@ impl<K: Ord, V, N: ArrayLength<MaybeUninit<Record<K, V>>>> SlabMap<K, V, N> {
 
         match v {
             Ok(v) => Ok(*v),
-            Err(v) if *v >= <N as Unsigned>::to_usize() => Err(None),
+            Err(v) if *v >= N => Err(None),
             Err(v) => Err(Some(*v)),
         }
     }
@@ -214,7 +215,7 @@ impl<K: Ord, V, N: ArrayLength<MaybeUninit<Record<K, V>>>> SlabMap<K, V, N> {
         }
 
         if let Some(index) = is_fallback {
-            if index < std::cmp::min(<N as Unsigned>::to_usize(), self.len) {
+            if index < std::cmp::min(N, self.len) {
                 self.slots[index..self.len].rotate_right(1);
             } else {
                 self.len += 1;

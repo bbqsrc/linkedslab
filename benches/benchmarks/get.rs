@@ -1,7 +1,5 @@
 use criterion::{black_box, BatchSize, BenchmarkId, Criterion, Throughput};
-use generic_array::typenum::{U12, U16, U4, U6, U8};
 use rand::RngCore;
-use std::collections::BTreeMap;
 
 use crate::util::Item;
 
@@ -21,7 +19,7 @@ pub fn benches(criterion: &mut Criterion) {
                 b.iter_batched_ref(
                     || {
                         let keys = (0..size).map(|_| rng.next_u64()).collect::<Vec<_>>();
-                        let mut map = linkedslab::SlabMap::<_, _, U4>::new();
+                        let mut map = linkedslab::SlabMap::<_, _, 4>::new();
                         for _ in 0..size {
                             map.insert(rng.next_u64(), Item::new(&mut rng));
                         }
@@ -44,7 +42,7 @@ pub fn benches(criterion: &mut Criterion) {
                 b.iter_batched_ref(
                     || {
                         let keys = (0..size).map(|_| rng.next_u64()).collect::<Vec<_>>();
-                        let mut map = linkedslab::SlabMap::<_, _, U8>::new();
+                        let mut map = linkedslab::SlabMap::<_, _, 8>::new();
                         for _ in 0..size {
                             map.insert(rng.next_u64(), Item::new(&mut rng));
                         }
@@ -67,7 +65,7 @@ pub fn benches(criterion: &mut Criterion) {
                 b.iter_batched_ref(
                     || {
                         let keys = (0..size).map(|_| rng.next_u64()).collect::<Vec<_>>();
-                        let mut map = linkedslab::SlabMap::<_, _, U12>::new();
+                        let mut map = linkedslab::SlabMap::<_, _, 12>::new();
                         for _ in 0..size {
                             map.insert(rng.next_u64(), Item::new(&mut rng));
                         }
@@ -90,7 +88,7 @@ pub fn benches(criterion: &mut Criterion) {
                 b.iter_batched_ref(
                     || {
                         let keys = (0..size).map(|_| rng.next_u64()).collect::<Vec<_>>();
-                        let mut map = linkedslab::SlabMap::<_, _, U16>::new();
+                        let mut map = linkedslab::SlabMap::<_, _, 16>::new();
                         for _ in 0..size {
                             map.insert(rng.next_u64(), Item::new(&mut rng));
                         }
