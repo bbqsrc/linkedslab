@@ -1,10 +1,3 @@
-#![feature(box_syntax)]
-#![feature(maybe_uninit_ref)]
-#![allow(incomplete_features)]
-#![feature(const_generics)]
-
-// use generic_array::typenum::{self, Unsigned};
-// use generic_array::{ArrayLength, GenericArray};
 use std::{fmt::Debug, mem::MaybeUninit};
 
 pub struct SlabMap<K, V, const N: usize>
@@ -28,9 +21,8 @@ where
             tail: self.tail.clone(),
         };
 
-        let slots = &unsafe {
-            std::mem::transmute::<_, &[Record<K, V>]>(&self.slots[..])
-        }[..self.len];
+        let slots =
+            &unsafe { std::mem::transmute::<_, &[Record<K, V>]>(&self.slots[..]) }[..self.len];
 
         for (i, item) in slots.iter().enumerate() {
             let item = item.clone();
@@ -43,14 +35,18 @@ where
 
 impl<K, V, const N: usize> Debug for SlabMap<K, V, N>
 where
-    K: Ord + Debug, V: Debug
+    K: Ord + Debug,
+    V: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_map().entries(self.iter()).finish()
     }
 }
 
-impl<K, V> Default for SlabMap<K, V, 8_usize> where K: Ord {
+impl<K, V> Default for SlabMap<K, V, 8_usize>
+where
+    K: Ord,
+{
     fn default() -> Self {
         SlabMap {
             slots: unsafe { MaybeUninit::uninit().assume_init() },
@@ -117,7 +113,7 @@ impl<'a, K: Ord, V, const N: usize> Iterator for Iter<'a, K, V, N> {
 
         let cur = self.cur;
         self.cur += 1;
-        let r = unsafe { self.map.slots[cur].get_ref() };
+        let r = unsafe { &*self.map.slots[cur].as_ptr() };
         return Some((&r.key, &r.value));
     }
 }
@@ -131,7 +127,7 @@ impl<K: Ord, V, const N: usize> SlabMap<K, V, N> {
             tail: None,
         };
         map.slots[0] = MaybeUninit::new(record);
-        box map
+        Box::new(map)
     }
 
     pub fn iter<'a>(&'a self) -> Iter<'a, K, V, N> {
@@ -140,8 +136,7 @@ impl<K: Ord, V, const N: usize> SlabMap<K, V, N> {
 
     #[inline]
     pub fn binary_search<'a>(&'a self, key: &K) -> Result<usize, Option<usize>> {
-        let v =
-            &self.slots[0..self.len].binary_search_by(|x| unsafe { x.get_ref() }.key.cmp(key));
+        let v = &self.slots[0..self.len].binary_search_by(|x| unsafe { &*x.as_ptr() }.key.cmp(key));
 
         match v {
             Ok(v) => Ok(*v),
@@ -169,7 +164,7 @@ impl<K: Ord, V, const N: usize> SlabMap<K, V, N> {
         let mut t = Some(self);
         while let Some(slab) = t {
             match slab.binary_search(key) {
-                Ok(i) => return Some(&unsafe { slab.slots[i].get_ref() }.value),
+                Ok(i) => return Some(&unsafe { &*slab.slots[i].as_ptr() }.value),
                 Err(_) => {
                     t = slab.tail.as_ref().map(|x| &**x);
                 }
@@ -190,7 +185,7 @@ impl<K: Ord, V, const N: usize> SlabMap<K, V, N> {
         match self.binary_search(&key) {
             Ok(i) => {
                 std::mem::swap(
-                    &mut unsafe { self.slots[i].get_mut() }.value,
+                    &mut unsafe { &mut *self.slots[i].as_mut_ptr() }.value,
                     &mut value,
                 );
                 return Ok(Some(value));
